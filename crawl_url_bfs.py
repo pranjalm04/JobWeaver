@@ -6,7 +6,7 @@ from crawl4ai import CrawlResult, AsyncWebCrawler, CrawlerRunConfig
 from utils.normalize_url import normalize_url
 import regex as re
 from Heuristic_search import check_job_listing_heuristics
-
+from utils.job_listing_llm_preprocess import analyze_full_html_with_mistral
 
 class BFSCrawl():
     """
@@ -92,8 +92,16 @@ class BFSCrawl():
         next_depth = current_depth + 1
         if next_depth > self.max_depth:
             return [0,{}, False]
+        # print(result.html)
         score,debug_info = check_job_listing_heuristics(result.html,source_url)
-        isJoblisting = True if score > 3.0 else False
+        isJoblisting = True if score > 3 else False
+        if isJoblisting:
+            try:
+                response=analyze_full_html_with_mistral(result.html,source_url)
+                print(source_url,response)
+            except Exception as e:
+                print("error while getting response from llm",e)
+
 
         links = result.links.get("internal", [])
 
@@ -148,7 +156,6 @@ class BFSCrawl():
 
             for i in range(0, len(urls_depth), max_concurrent):
                 batch = urls_depth[i:i + max_concurrent]
-                print(len(batch))
                 tasks = []
                 for j, (url, depth) in enumerate(batch):
                     session_id = (
@@ -184,13 +191,13 @@ class BFSCrawl():
                 if url not in remove_duplicates:
                     remove_duplicates.add(url)
                     filtered_next_level.append((url, source_url, depth))
-                    print(url, depth)
+                    # print(url, depth)
 
             current_level = filtered_next_level
             print(
                 "-------------------------------------------------------------------------------------------------------")
         for result in results:
-            if result.metadata['score']>=2.5:
+            # if result.metadata['score']>=3.0:
                 # print(result.html)
                 print(f"{result.url} {result.metadata['depth']} {result.metadata['score']} {result.metadata['debug_info']}")
         print(self._pages_crawled)

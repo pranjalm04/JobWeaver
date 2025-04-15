@@ -160,8 +160,9 @@ def check_job_listing_heuristics(html_content, url=None):
 
         # Cap score if only text/numbers were found
         pagination_score = min(pagination_score, 1.2) # Slightly less confidence than class-based
-        score += pagination_score
-        if pagination_score > 0: pagination_found = True
+    if pagination_score > 0: pagination_found = True
+    score += pagination_score
+
 
 
     # --- 4. Job Search Form Check (Weight: 1.0) ---
@@ -198,20 +199,25 @@ def check_job_listing_heuristics(html_content, url=None):
     potential_item_count = 0
     # Heuristic: Look for common container tags with classes hinting at 'job', 'listing', 'item', 'card', 'result'
     # This needs refinement based on common patterns across sites.
-    common_selectors = ['div[class*="job"]', 'li[class*="job"]', 'article[class*="job"]',
-                        'div[class*="result"]', 'li[class*="result"]', 'div[class*="item"]',
-                        'div[class*="card"]','div[class*="career"]','tr[class*="job"]','article[class*="career"]'] # Added table row
+    
     potential_items = []
+    common_selectors = [("div", "job"), ("li", "job"), ("article", "job"), ("div", "result"), ("li", "result"),
+                        ("div", "item"), ("div", "card"),
+                        ("div", "Career"), ("tr", "job"), ("article", "career"),("div","position")]  # Added table row
     for selector in common_selectors:
         try:
-            items = soup.select(selector, limit=50) # Use CSS selectors
+            # items = soup.select(selector, limit=50) # Use CSS selectors
+            items = soup.find_all(selector[0], class_=re.compile(r'{}'.format(selector[1]), re.IGNORECASE))
             potential_items.extend(items)
         except Exception:
             pass # Ignore invalid selectors
-    for item in potential_items:
-        print(item)
+    # for item in potential_items:
+    #     print(item)
     # Deduplicate potential items based on the element itself
     unique_items = list({item: True for item in potential_items}.keys())
+    # for i in unique_items:
+    #     print(i)
+    #     print('---------------------------------------------------')
     if len(unique_items) >= 2:
         # Check if these items contain typical job info
         valid_items_count = 0
@@ -225,7 +231,7 @@ def check_job_listing_heuristics(html_content, url=None):
             if has_link and (has_job_keyword or has_title_fragment):
                 valid_items_count += 1
 
-        if valid_items_count >= 3:
+        if valid_items_count >= 2:
              # Scale score by count, capped at max weight 2.0
              item_score = 4.0 * min(valid_items_count / 10.0, 1.0)
              score += item_score
@@ -248,7 +254,7 @@ def check_job_listing_heuristics(html_content, url=None):
                   if any(frag in link_text_lower for frag in JOB_TITLE_FRAGMENTS):
                      job_link_count += 1
 
-        if job_link_count >= 5: # Require more links for this weaker heuristic
+        if job_link_count >= 2: # Require more links for this weaker heuristic
             link_score = 0.5
             score += link_score
             debug_info.append(f"(+{link_score:.1f}) Fallback: Found {job_link_count} links containing job title fragments.")
