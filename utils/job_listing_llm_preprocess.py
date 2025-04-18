@@ -1,12 +1,26 @@
+import requests
 from bs4 import BeautifulSoup, Comment
-from typing import List
+from typing import List,Optional
 import re
 import json
-from mistralai.client import MistralClient
-from mistralai import Mistral
-import json
 import time
-from openai import OpenAI
+from pydantic import BaseModel, Field
+from google import genai
+
+class NextPageElement(BaseModel):
+    text: str = Field(..., description="Text of the next page button")
+    href: str = Field(..., description="Href URL of the next page link")
+    selector: str = Field(..., description="CSS selector for the next page element")
+class JobLink(BaseModel):
+    href: str = Field(..., description="Href of the individual job listing")
+    text: str = Field(..., description="Text shown for the job link")
+
+class JobListingSchema(BaseModel):
+    is_job_listing: bool = Field(..., description="True if chunk looks like a job listing page")
+    score:float=Field(...,description="The confidence score for detecting job listing page in range of 0-10")
+    has_pagination: bool = Field(..., description="True if pagination is detected")
+    next_page_element: Optional[NextPageElement] = Field(None, description="Next page element info if paginated")
+    individual_job_links: List[JobLink] = Field(default_factory=list, description="List of job detail page links")
 def extract_minified_body_html(html: str, max_length: int = 10000) -> str:
     try:
         soup = BeautifulSoup(html, "lxml")
@@ -16,12 +30,12 @@ def extract_minified_body_html(html: str, max_length: int = 10000) -> str:
         if body is None:
             return ""
         cleaned_html = body.decode_contents()
-        cleaned_html = re.sub(r"\s+", " ", cleaned_html)
+        # cleaned_html = re.sub(r"\s+", " ", cleaned_html)
         return cleaned_html
     except Exception as e:
         print(f"[HTML Parse Error]: {e}")
         return ""
-def create_chunks_html_for_prompts(html:str,chunk_size=10000,chunk_overlap=1000)->List:
+def create_chunks_html_for_prompts(html:str,chunk_size=30000,chunk_overlap=1000)->List:
     chunks=[]
     for i in range(0,len(html),chunk_size):
         start=i-chunk_overlap if i>0 else i
@@ -30,42 +44,49 @@ def create_chunks_html_for_prompts(html:str,chunk_size=10000,chunk_overlap=1000)
     return chunks
 def make_chunk_prompt(chunk: str, source_url: str) -> str:
     return f"""
-You are analyzing part of an HTML page to detect job listings.
-dont assume any content, analyze content on the provided html chunk.
-Page URL: {source_url}
+You are analyzing a chunk of HTML from a webpage. Your task is to determine if this chunk is part of a **job listing page**.
 
-This is a **chunk** of the `<body>` tag of the HTML. Your task is to determine if this chunk contains part of a job **listing page**.
-Please analyze the HTML content of the chunk below and answer the following:
+### Your Goal:
+Detect pages that contain a **list of job titles** — nothing else qualifies as a job listing page.
 
-1. Is this a **job listing page**?
--> A job listing page will have list of job titles if it does mark "is_job_listing" as True and individual job listing page 
-has details only of one job so do not confuse it with job listing page
-2. Does it contain **pagination** (e.g., Next button or numbered links)?
-3. If yes, provide:
-   - The href or button text that links to the next page.
-4. If no, provide:
-   - The links (href and visible text) of individual job postings listed on this page.
+### STRICT CRITERIA:
+- Only identify a page as `is_job_listing = true` if the **visible text** includes **actual job titles** like:
+  "Software Engineer", "Registered Nurse", "Marketing Manager", "Warehouse Associate", etc.
+- **Do NOT use the `href` or surrounding tags** to infer job titles. Analyze only the visible **text** of the page.
+- Do not mistake menu items, filter options, roles in dropdowns, or department names for job titles.
 
-Return JSON like this:
-{{
-  "is_job_listing": true,
-  "has_pagination": true,
-  "next_page_element": {{
-    "text": "...",
-    "href": "..."
-  }},
-  "individual_job_links": [
-    {{"text": "...", "href": "..."}}
-  ]
-}}
+### JOB LINK EXTRACTION:
+- If valid job titles are detected:
+  - Extract their associated `<a>` tag `href` and text.
+  - Add them to the `individual_job_links` list.
+- If no valid job titles are found, the `individual_job_links` array should be empty.
 
-HTML Chunk:
+### PAGINATION:
+- If pagination elements are clearly visible (e.g., "Next", "Load more", numbered buttons for pages), set `has_pagination = true`.
+- If no such element is visible, set `has_pagination = false`.
+- If pagination is detected, extract the pagination element’s text, href, and CSS selector.
+
+### DO NOT:
+- Do not infer job listings from URL, metadata, or assumptions.
+- Do not guess based on sections labeled “Departments”, “Job Areas”, “Career Tracks”, or “Locations”.
+- Do not include any extra text or explanation — only return a valid JSON object matching the predefined schema.
+
+### TASK OUTPUT (schema handled separately):
+Return a structured JSON with:
+- is_job_listing: boolean
+- has_pagination: boolean
+- next_page_element: object or null
+- individual_job_links: list of text ,href"
+
+Analyze only the chunk below:
+
 ```html
 {chunk}
-"""
+```"""
 def merge_llm_chunk_responses(responses: list[dict]) -> dict:
     final = {
         "is_job_listing": False,
+        "score":0,
         "has_pagination": False,
         "next_page_element": None,
         "individual_job_links": []
@@ -75,7 +96,7 @@ def merge_llm_chunk_responses(responses: list[dict]) -> dict:
         if resp.get("is_job_listing"):
             final["is_job_listing"] = True
             final["individual_job_links"].extend(resp.get("individual_job_links", []))
-
+            final["score"]=max(final["score"],resp.get("score",0))
             if resp.get("has_pagination") and not final["next_page_element"]:
                 final["has_pagination"] = True
                 final["next_page_element"] = resp.get("next_page_element")
@@ -89,83 +110,47 @@ def merge_llm_chunk_responses(responses: list[dict]) -> dict:
             deduped_links.append(link)
             seen.add(key)
     final["individual_job_links"] = deduped_links
-    # print('final json',final)
     return final
 
 
-def analyze_full_html_with_mistral(html: str, url: str) -> dict:
+def analyze_full_html_with_llm(html: str, url: str) -> dict:
     cleaned_body = extract_minified_body_html(html)
     chunks = create_chunks_html_for_prompts(cleaned_body)
 
     responses = []
     for chunk in chunks:
+        # print(chunk,"#############################")
         prompt = make_chunk_prompt(chunk, url)
         # Call mistral API here with the prompt
         result = detect_job_listings(prompt)  # <- plug in your API client
-        # print(result)
+
         try:
             responses.append(result)
         except Exception as e:
             print(f"Error parsing response: {e}")
-        time.sleep(2.3)
+        time.sleep(1)
+    # return responses
+    # del chunks
+    # import gc
+    # gc.collect()
     return merge_llm_chunk_responses(responses)
 def detect_job_listings(user_prompt):
 
-    api_key = "guEDJaE2YX3qKA2OkrnTxfAamFFj29wX"
-
-    api_key_deepseek='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'
-
-
-    openai_client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key= api_key_deepseek,
-    )
-
-    chat_response = openai_client.chat.completions.create(
-        model="openai/gpt-4",
-        extra_body={
-            "models": ["anthropic/claude-3.5-sonnet", "gryphe/mythomax-l2-13b"],
-        },
-        messages=[
-            {
-                "role": "system",
-                "content": """"You are an expert HTML analyzer specialized in job websites.,
-                You are given raw HTML of a webpage and asked to classify it and extract meaningful links."""
-            },
-
-            {
-                "role": "user",
-                "content": user_prompt
-            }
-        ]
-    )
-
-    # print(completion.choices[0].message.content)
-
-#     client = Mistral(api_key=api_key)
-#     model = "mistral-large-latest"
-#     chat_response = client.chat.complete(
-#         model=model,
-#         messages=[
-#             {
-#                 "role": "system",
-#                 "content": """"You are an expert HTML analyzer specialized in job websites.
-# You are given raw HTML of a webpage and asked to classify it and extract meaningful links."""
-#             },
-#             {
-#                 "role": "user",
-#                 "content":user_prompt
-#             }
-#         ],
-#         response_format={
-#             "type": "json_object",
-#         }
-#     )
+    api_key = "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"
 
     try:
-        raw_output = chat_response.choices[0].message.content
-        print(raw_output)
-        parsed_json = json.loads(raw_output)
+        client = genai.Client(api_key="")
+
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=user_prompt,
+            config={
+                'response_mime_type': 'application/json',
+                'response_schema': JobListingSchema,
+            },
+        )
+        raw_response=response.text
+        parsed_json=json.loads(raw_response)
         return parsed_json
     except Exception as e:
         print(f"[LLM Parsing Error] {e}")

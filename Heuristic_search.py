@@ -28,7 +28,7 @@ JOB_ITEM_INDICATORS = [
 # Common job title fragments (used in repetitive structure check)
 JOB_TITLE_FRAGMENTS = [
     "Advanced Practice Provider", "Business Office Position", "Radiology Technologist Position", "analyst", "specialist", "coordinator",
-    "director", "assistant", "designer", "consultant", "scientist"
+    "director", "assistant", "designer", "consultant", "nurse","therapist","psychiatrist","support worker","councellor","Technologist","scientist"
 ]
 
 # --- Search Form Indicators ---
@@ -207,17 +207,13 @@ def check_job_listing_heuristics(html_content, url=None):
     for selector in common_selectors:
         try:
             # items = soup.select(selector, limit=50) # Use CSS selectors
-            items = soup.find_all(selector[0], class_=re.compile(r'{}'.format(selector[1]), re.IGNORECASE))
+            items = soup.find_all(selector[0], class_=re.compile(re.escape(selector[1]), re.IGNORECASE))
             potential_items.extend(items)
         except Exception:
             pass # Ignore invalid selectors
-    # for item in potential_items:
-    #     print(item)
-    # Deduplicate potential items based on the element itself
+
     unique_items = list({item: True for item in potential_items}.keys())
-    # for i in unique_items:
-    #     print(i)
-    #     print('---------------------------------------------------')
+    # print(len(unique_items))
     if len(unique_items) >= 2:
         # Check if these items contain typical job info
         valid_items_count = 0
@@ -230,7 +226,7 @@ def check_job_listing_heuristics(html_content, url=None):
             # Require a link and some other job-related text
             if has_link and (has_job_keyword or has_title_fragment):
                 valid_items_count += 1
-
+        # print("valid_items_count",valid_items_count)
         if valid_items_count >= 2:
              # Scale score by count, capped at max weight 2.0
              item_score = 4.0 * min(valid_items_count / 10.0, 1.0)

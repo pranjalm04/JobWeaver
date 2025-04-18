@@ -1,5 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
+from crawl4ai.content_filter_strategy import PruningContentFilter
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, KeywordRelevanceScorer, \
     LXMLWebScrapingStrategy, FilterChain, URLPatternFilter, BM25ContentFilter,URLScorer
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy,DFSDeepCrawlStrategy ,BestFirstCrawlingStrategy, ContentRelevanceFilter
@@ -22,31 +24,48 @@ browser_cfg = BrowserConfig(
     user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/116.0.0.0 Safari/537.36",
 )
 
-run_cfg = CrawlerRunConfig(
-    wait_until="networkidle",
-    excluded_tags=["style","script"],
-    exclude_external_links=False,
-    # stream=True,  # Enable streaming for arun_many()
-    cache_mode=CacheMode.DISABLED,
-    # semaphore_count=10,
-    process_iframes=True,
-    remove_overlay_elements=True,
-    exclude_external_images=True,
-    exclude_social_media_links=True,
-    verbose=False,
-    log_console=False
-)
-async def main():
 
+async def main():
+    prune_filter = PruningContentFilter(
+        # Lower → more content retained, higher → more content pruned
+        threshold=0.2,
+        # "fixed" or "dynamic"
+        threshold_type="dynamic",
+        # Ignore nodes with <5 words
+        min_word_threshold=5
+    )
+
+    # Step 2: Insert it into a Markdown Generator
+    md_generator = DefaultMarkdownGenerator(content_filter=prune_filter)
+    run_cfg = CrawlerRunConfig(
+        wait_until="networkidle",
+        excluded_tags=["style", "script"],
+        exclude_external_links=False,
+        markdown_generator=md_generator,
+        # stream=True,  # Enable streaming for arun_many()
+        cache_mode=CacheMode.DISABLED,
+        # semaphore_count=10,
+        process_iframes=True,
+        remove_overlay_elements=True,
+        exclude_external_images=True,
+        exclude_social_media_links=True,
+        verbose=False,
+        log_console=False
+    )
     crawler: AsyncWebCrawler = AsyncWebCrawler(config=browser_cfg)
     await crawler.start()
     """inspect this site"""
-    start_url="https://www.talberthouse.org/careers/"
+    start_url="https://www.overlakecareers.org/jobs/nursing-all-specialties/"
+
     results=await crawler.arun(url=start_url,config=run_cfg)
     try:
-        soup = BeautifulSoup(results.html, 'html.parser')
-        parsed_html_str = str(soup)
-        print(parsed_html_str)
+        if results.success:
+            with open('output.md', "w") as f:
+                f.write(results.markdown.fit_markdown)
+            print(results.markdown.fit_markdown)
+            soup = BeautifulSoup(results.html, 'html.parser')
+            parsed_html_str = str(soup)
+            # print(parsed_html_str)
     except Exception as e:
         print(f"[Error] BeautifulSoup Parsing Error: {e}")
         return 0.0 # Cannot parse

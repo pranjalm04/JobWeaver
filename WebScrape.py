@@ -1,10 +1,9 @@
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, KeywordRelevanceScorer, \
-    LXMLWebScrapingStrategy, FilterChain, URLPatternFilter, BM25ContentFilter,URLScorer
-from crawl4ai.deep_crawling import BFSDeepCrawlStrategy,DFSDeepCrawlStrategy ,BestFirstCrawlingStrategy, ContentRelevanceFilter
-from concurrent.futures import ThreadPoolExecutor
-from crawl4ai.deep_crawling.scorers import ContentTypeScorer
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 import regex as re
 from crawl_url_bfs import BFSCrawl
+from crawl4ai.content_filter_strategy import PruningContentFilter
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
 
 import asyncio
 browser_cfg = BrowserConfig(
@@ -17,7 +16,17 @@ browser_cfg = BrowserConfig(
     },
     user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/116.0.0.0 Safari/537.36",
 )
+prune_filter = PruningContentFilter(
+    # Lower → more content retained, higher → more content pruned
+    threshold=0.2,
+    # "fixed" or "dynamic"
+    threshold_type="dynamic",
+    # Ignore nodes with <5 words
+    min_word_threshold=5
+)
 
+# Step 2: Insert it into a Markdown Generator
+md_generator = DefaultMarkdownGenerator(content_filter=prune_filter)
 run_cfg = CrawlerRunConfig(
     wait_until="domcontentloaded",
     excluded_tags=["style","script"],
@@ -25,6 +34,7 @@ run_cfg = CrawlerRunConfig(
     # stream=True,  # Enable streaming for arun_many()
     cache_mode=CacheMode.DISABLED,
     # semaphore_count=10,
+    markdown_generator=md_generator,
     process_iframes=True,
     remove_overlay_elements=True,
     exclude_external_images=True,
@@ -37,9 +47,9 @@ async def main():
     crawler: AsyncWebCrawler = AsyncWebCrawler(config=browser_cfg)
     await crawler.start()
     """inspect this site"""
-    start_url="https://lutheranhospital.com"
-    crawl=BFSCrawl(start_url=start_url,max_depth=4,include_external=True)
-    results=await crawl._arun_batch(start_url,crawler,run_cfg,50)
+    start_url="https://www.scripps.org"
+    crawl=BFSCrawl(start_url=start_url,max_depth=2,include_external=True)
+    results=await crawl._arun_batch(crawler,run_cfg,50)
 
 
     await crawler.close()
