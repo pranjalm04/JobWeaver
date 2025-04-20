@@ -8,7 +8,7 @@ import regex as re
 # from cosine_similarity import calculate_cosine_similarity_score
 from Heuristic_search import check_job_listing_heuristics
 from utils.job_listing_llm_preprocess import analyze_full_html_with_llm
-
+import os
 
 class BFSCrawl():
     """
@@ -107,9 +107,6 @@ class BFSCrawl():
         and its depth is tracked.
         """
         score, debug_info = check_job_listing_heuristics(result.html, source_url)
-        # print(result.markdown.fit_markdown)
-        # cosine_similarity_score =await calculate_cosine_similarity_score(result.markdown.fit_markdown)
-        # print(f"cosine_similarity_score {source_url} {cosine_similarity_score}")
         is_job_listing = True if score > 3 else False
         job_listing_metadata=None
         # if is_job_listing:
@@ -139,6 +136,8 @@ class BFSCrawl():
 
             for url, ctx in valid_links:
                 # attach the score to metadata if needed
+                if len(next_level) > int(os.getenv("MAX_URLS_ON_LEVEL")):
+                    break
                 prioritized_url = self.prioritizeUrls(url, ctx)
                 if prioritized_url is not None:
                     next_level.append((prioritized_url, source_url, next_depth))
@@ -149,7 +148,7 @@ class BFSCrawl():
             crawler: AsyncWebCrawler,
             config: CrawlerRunConfig,
             max_concurrent: int
-    ) -> List[dict[str,any]]:
+    ) -> [dict[str,any] or None]:
         """
         Batch (non-streaming) mode:
         Processes one BFS level at a time, then yields all the results.
@@ -157,15 +156,15 @@ class BFSCrawl():
         visited: Set[str] = set()
         current_level: List[Tuple[str, Optional[str], int]] = [(self.start_url, None, 0)]
         results: List[dict[str,any]] = []
-
         depth_bfs=0
+        remove_duplicates = set()
         while current_level and not self._cancel_event.is_set():
-            remove_duplicates = set()
+
             next_level: List[Tuple[str, Optional[str], int]] = []
             urls_depth = [(url, depth) for url, _, depth in current_level]
             urls = [url for url, _ in urls_depth]
             visited.update(urls)
-            print("level==============", depth_bfs, current_level)
+            print("level==============", depth_bfs)
             # Clone the config to disable deep crawling recursion and enforce batch mode.
             batch_config = config.clone(deep_crawl_strategy=None, stream=False)
             for i in range(0, len(urls_depth), max_concurrent):
@@ -186,10 +185,7 @@ class BFSCrawl():
                         print("Error parsing url {}".format(url))
                     elif result.success:
                         url = result.url
-                        result.metadata = result.metadata or {}
-                        result.metadata["depth"] = depth
                         parent_url = next((parent for (u, parent, depth) in current_level if u == url), None)
-                        result.metadata["parent_url"] = parent_url
                         task = self.link_discovery(result, url, depth, visited, next_level)
                         discovery_tasks.append((result, task))
                 results_with_discovery = await asyncio.gather(*[t[1] for t in discovery_tasks], return_exceptions=True)
@@ -198,6 +194,7 @@ class BFSCrawl():
                     if isinstance((score, debug_info, is_job_listing), Exception):
                         continue
                     result_metadata={
+                        "html":result.html,
                         "url": result.url,
                         "depth":depth_bfs,
                         "debug_info": debug_info,
@@ -205,7 +202,8 @@ class BFSCrawl():
                         "job_listing_score": score,
                         "job_listing_metadata":job_listing_metadata
                     }
-                    del result
+                    result.html=None
+                    result.links=None
                     results.append(result_metadata)
 
             filtered_next_level = []
@@ -218,8 +216,8 @@ class BFSCrawl():
             print(f"----------------FINISHED CRAWLING URLS AT LEVEL {depth_bfs}--------------------------------")
             depth_bfs+=1
 
-        results=sorted(results,key=lambda x:x['job_listing_score'],reverse=True)
-        for result in results:
-            if result["job_listing_score"] > 4:
-                print(result["url"],result["job_listing_score"],result["debug_info"])
-        return results
+        results=sorted(results,key=lambda x:(-x['job_listing_score'],len(x["url"])))
+        # for i,result in enumerate(results):
+        #     if i<5:
+        #         print(result["url"],result["job_listing_score"],result["debug_info"])
+        return results[0] if results else None

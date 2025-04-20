@@ -28,9 +28,8 @@ JOB_ITEM_INDICATORS = [
 # Common job title fragments (used in repetitive structure check)
 JOB_TITLE_FRAGMENTS = [
     "Advanced Practice Provider", "Business Office Position", "Radiology Technologist Position", "analyst", "specialist", "coordinator",
-    "director", "assistant", "designer", "consultant", "nurse","therapist","psychiatrist","support worker","councellor","Technologist","scientist"
+    "director", "assistant", "designer", "consultant", "nurse","therapist","radiology","psychiatrist","support worker","councellor","Technologist","scientist"
 ]
-
 # --- Search Form Indicators ---
 SEARCH_FORM_INPUT_NAMES = [
     "keyword", "query", "q", "search", "location", "city", "state",
@@ -41,9 +40,7 @@ SEARCH_FORM_KEYWORDS = ["search jobs", "find jobs", "filter jobs"]
 # --- URL Path Indicators ---
 LISTING_URL_PATHS = ["/jobs", "/careers", "/vacancies", "/openings", "/search", "/job-listings", "/positions", "/employment"]
 
-
 # --- Heuristic Function ---
-
 def check_job_listing_heuristics(html_content, url=None):
     """
     Analyzes HTML content using heuristics to determine the likelihood
@@ -106,9 +103,9 @@ def check_job_listing_heuristics(html_content, url=None):
                  score += 1.0
                  debug_info.append(f"(+1.0) URL path ('{path_lower}') matches common listing pattern.")
             # Check for search query params common in listings
-            elif query_params and any(k.lower() in SEARCH_FORM_INPUT_NAMES for k in query_params):
-                 score += 0.7 # Slightly less score than path match
-                 debug_info.append(f"(+0.7) URL query params suggest a search results page.")
+            # elif query_params and any(k.lower() in SEARCH_FORM_INPUT_NAMES for k in query_params):
+            #      score += 0.7 # Slightly less score than path match
+            #      debug_info.append(f"(+0.7) URL query params suggest a search results page.")
         except ValueError:
              debug_info.append("[Warn] URL parsing error.")
              pass # Ignore URL errors
@@ -167,6 +164,7 @@ def check_job_listing_heuristics(html_content, url=None):
 
     # --- 4. Job Search Form Check (Weight: 1.0) ---
     forms = soup.find_all('form', limit=10)
+    forms.extend(soup.find_all('div',limit=50))
     search_form_found = False
     for form in forms:
         form_text = form.get_text(" ", strip=True).lower()
@@ -191,29 +189,25 @@ def check_job_listing_heuristics(html_content, url=None):
                 search_form_found = True
                 debug_info.append("(+0.8) Found form with relevant input names (keyword, location etc.).")
                 break
-
-
     # --- 5. Repetitive Job Item Structure Check (Weight: 2.0) ---
     # More robust check: Find potential container elements and see if they repeat
     # with similar content patterns (e.g., link + location text).
     potential_item_count = 0
     # Heuristic: Look for common container tags with classes hinting at 'job', 'listing', 'item', 'card', 'result'
     # This needs refinement based on common patterns across sites.
-    
     potential_items = []
     common_selectors = [("div", "job"), ("li", "job"), ("article", "job"), ("div", "result"), ("li", "result"),
                         ("div", "item"), ("div", "card"),
-                        ("div", "Career"), ("tr", "job"), ("article", "career"),("div","position")]  # Added table row
+                        ("div", "Career"), ("tr", "job"), ("article","item"),("article", "career"),("div","position")]  # Added table row
     for selector in common_selectors:
         try:
-            # items = soup.select(selector, limit=50) # Use CSS selectors
-            items = soup.find_all(selector[0], class_=re.compile(re.escape(selector[1]), re.IGNORECASE))
+            items = soup.find_all(selector[0], class_=re.compile(re.escape(selector[1]), re.IGNORECASE),limit=50)
             potential_items.extend(items)
         except Exception:
-            pass # Ignore invalid selectors
+            pass
 
     unique_items = list({item: True for item in potential_items}.keys())
-    # print(len(unique_items))
+
     if len(unique_items) >= 2:
         # Check if these items contain typical job info
         valid_items_count = 0
@@ -221,20 +215,17 @@ def check_job_listing_heuristics(html_content, url=None):
             item_text = item.get_text(" ", strip=True).lower()
             has_link = item.find('a', href=True) is not None
             has_job_keyword = any(ind in item_text for ind in JOB_ITEM_INDICATORS)
-            has_title_fragment = any(frag in item_text for frag in JOB_TITLE_FRAGMENTS)
-
+            has_title_fragment = any(frag.lower() in item_text.lower() for frag in JOB_TITLE_FRAGMENTS)
             # Require a link and some other job-related text
             if has_link and (has_job_keyword or has_title_fragment):
                 valid_items_count += 1
         # print("valid_items_count",valid_items_count)
         if valid_items_count >= 2:
              # Scale score by count, capped at max weight 2.0
-             item_score = 4.0 * min(valid_items_count / 10.0, 1.0)
+             item_score = 4.0 * min(valid_items_count / 5.0, 1.0)
              score += item_score
              debug_info.append(f"(+{item_score:.1f}) Found {valid_items_count} repeating items with job-like content via selectors.")
              potential_item_count = valid_items_count # For final check
-
-
     # --- 6. Fallback Repetitive Link Check (Weight: 0.5 - only if structured check failed) ---
     # If the selector method didn't find enough items, do a simpler check for multiple job-like links
     if potential_item_count < 3:
@@ -249,26 +240,11 @@ def check_job_listing_heuristics(html_content, url=None):
                   # Check if link text contains job title fragments
                   if any(frag in link_text_lower for frag in JOB_TITLE_FRAGMENTS):
                      job_link_count += 1
-
         if job_link_count >= 2: # Require more links for this weaker heuristic
             link_score = 0.5
             score += link_score
             debug_info.append(f"(+{link_score:.1f}) Fallback: Found {job_link_count} links containing job title fragments.")
-
-
     # --- Final Score & Debug ---
     final_score = round(score, 2)
-
-    # print(f"--- Heuristic Check Debug ({url or 'No URL'}) ---")
-    # for info in debug_info:
-    #     print(f"- {info}")
-    # print(f"--- Final Score: {final_score} ---")
-
     return final_score,debug_info
 
-
-# --- Example Usage ---
-
-    # Example HTML Snippets (replace with actual fetched HTML)
-
-    # Example 1: Likely Listing Page

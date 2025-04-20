@@ -11,6 +11,7 @@ import regex as re
 from collections import Counter
 from crawl_url_bfs import BFSCrawl
 import asyncio
+from utils.job_listing_llm_preprocess import extract_minified_body_html
 from Heuristic_search import check_job_listing_heuristics
 
 browser_cfg = BrowserConfig(
@@ -38,7 +39,7 @@ async def main():
     # Step 2: Insert it into a Markdown Generator
     md_generator = DefaultMarkdownGenerator(content_filter=prune_filter)
     run_cfg = CrawlerRunConfig(
-        wait_until="networkidle",
+        wait_until="load",
         excluded_tags=["style", "script"],
         exclude_external_links=False,
         markdown_generator=md_generator,
@@ -52,19 +53,29 @@ async def main():
         verbose=False,
         log_console=False
     )
+    import tiktoken
     crawler: AsyncWebCrawler = AsyncWebCrawler(config=browser_cfg)
     await crawler.start()
     """inspect this site"""
-    start_url="https://www.overlakecareers.org/jobs/nursing-all-specialties/"
-
+    start_url="https://recruiting.ultipro.com/MEA1004MEVM/JobBoard/d561e1d3-aa5e-4c1b-bcf5-5319c6abdcac/OpportunityDetail?opportunityId=778ce4d3-1690-46cb-8aac-834b03160cfe"
+    encoding = tiktoken.get_encoding("cl100k_base")
     results=await crawler.arun(url=start_url,config=run_cfg)
+
     try:
         if results.success:
-            with open('output.md', "w") as f:
-                f.write(results.markdown.fit_markdown)
-            print(results.markdown.fit_markdown)
-            soup = BeautifulSoup(results.html, 'html.parser')
-            parsed_html_str = str(soup)
+
+
+            # print(extract_minified_body_html(results.html))
+            markdown=results.markdown.raw_markdown
+            # print(markdown)
+            # print(results.markdown.fit_markdown)
+            # soup = BeautifulSoup(results.html, 'html.parser')
+            # parsed_html_str = soup.body
+            print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+            token_ids = encoding.encode(markdown)
+            print("total token count", len(token_ids))
+            # --- Count the tokens ---
+
             # print(parsed_html_str)
     except Exception as e:
         print(f"[Error] BeautifulSoup Parsing Error: {e}")
@@ -81,7 +92,9 @@ async def main():
             career_elements = soup.find_all(selector[0], class_=re.compile(r'{}'.format(selector[1]), re.IGNORECASE))
             # items = soup.select(selector, limit=50)  # Use CSS selectors
             # print(career_elements)
+
             potential_items.extend(career_elements)
+
         except Exception:
             pass  # Ignore invalid selectors
     unique_items=[]
