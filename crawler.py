@@ -3,7 +3,9 @@ from typing import List, Dict
 from dotenv import load_dotenv
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl_url_bfs import BFSCrawl  # ← your class
-
+from google import genai
+import os
+from utils.job_listing_llm_preprocess import analyze_full_html_with_llm
 MAX_SEEDS_IN_FLIGHT = 100
 MAX_PAGES_GLOBAL = 250
 MAX_PAGES_PER_SEED = 50
@@ -37,6 +39,7 @@ class crawlJobs():
             verbose=False,
             log_console=False
         )
+        self.client = genai.Client(api_key=os.getenv("API_KEY_GEMINI"))
 
         self.SEED_URLS = ['https://nrothandrehab.com', 'https://wythephysicianpractices.com',
                           'https://careers.uhhospitals.org']
@@ -57,13 +60,20 @@ class crawlJobs():
         async with self.seed_sem:  # limit concurrent seeds
             bfs = BFSCrawl(seed, MAX_DEPTH, include_external=True)
             rec = await bfs._arun_batch(self.crawler, self.RUN_CFG, MAX_PAGES_PER_SEED)
-            self.handle_result(rec)
+            await self.handle_result(rec)
 
-    def handle_result(self, rec: [Dict[str, any] or None]) -> None:
+    async def handle_result(self, rec: [Dict[str, any] or None]) -> None:
         """Persist / print the first (best) result returned by your BFS."""
         if not rec:
             return
+        llm_res=await analyze_full_html_with_llm(rec['html'],rec['url'],self.client)
+        if llm_res is not None:
+            import json
+            with open('llm_outputs.json', "a", encoding="utf-8") as f:
+                json.dump(llm_res, f, ensure_ascii=False)
+                f.write("\n")
         print(f"{rec['job_listing_score']:4.1f}  {rec['url']}")
+
 
     async def main(self) -> None:
         async with AsyncWebCrawler(config=self.BROWSER_CFG) as crawlerbfs:

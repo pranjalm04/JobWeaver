@@ -1,6 +1,3 @@
-import os
-
-import requests
 from bs4 import BeautifulSoup, Comment
 from typing import List, Optional
 import re
@@ -26,7 +23,7 @@ class JobListingSchema(BaseModel):
     is_job_listing: bool = Field(..., description="True if chunk looks like a job listing page")
     score: float = Field(..., description="The confidence score for detecting job listing page in range of 0-10")
     has_pagination: bool = Field(..., description="True if pagination is detected")
-    pagination_parent_container_selector:str= Field(...,description="css selector of the container containing all the individual job links")
+    pagination_parent_container_selector:str= Field(...,description="css selector of the element containing all the individual job links")
     next_page_element: Optional[NextPageElement] = Field(None, description="Next page element info if paginated")
     individual_job_links: List[JobLink] = Field(default_factory=list, description="List of job detail page links")
 
@@ -135,13 +132,48 @@ def merge_llm_chunk_responses(responses: list[dict]) -> dict:
     return final
 
 
-def analyze_full_html_with_llm(html: str, url: str) -> dict:
+def merge_llm_chunk_responses(responses: list[dict]) -> dict:
+    final = {
+        "is_job_listing": False,
+        "score": 0,
+        "has_pagination": False,
+        "pagination_parent_container_selector": '',
+        "next_page_element": None,
+        "individual_job_links": [],
+        "total_token_count": 0
+    }
+
+    for resp in responses:
+        if resp.get("is_job_listing"):
+            final["is_job_listing"] = True
+            final["individual_job_links"].extend(resp.get("individual_job_links", []))
+            final["score"] = max(final["score"], resp.get("score", 0))
+            final["total_token_count"] += resp.get("total_token_count", 0)
+
+            if resp.get("has_pagination") and not final["next_page_element"]:
+                final["has_pagination"] = True
+                final["parent_container_selector"] = resp.get("pagination_parent_container_selector")
+                final["next_page_element"] = resp.get("next_page_element")
+
+    # Deduplicate job links
+    seen = set()
+    deduped_links = []
+    for link in final["individual_job_links"]:
+        key = link["href"]
+        if key not in seen:
+            deduped_links.append(link)
+            seen.add(key)
+    final["individual_job_links"] = deduped_links
+    return final
+
+
+async def analyze_full_html_with_llm(html: str, url: str,client:genai.Client) -> dict:
     cleaned_body = extract_minified_body_html(html)
     chunks = create_chunks_html_for_prompts(cleaned_body)
     responses = []
     for chunk in chunks:
         prompt = make_chunk_prompt(chunk, url)
-        result = detect_job_listings(prompt)
+        result = await detect_job_listings(prompt,client)
         try:
             responses.append(result)
         except Exception as e:
@@ -151,10 +183,10 @@ def analyze_full_html_with_llm(html: str, url: str) -> dict:
     return merge_llm_chunk_responses(responses)
 
 
-def detect_job_listings(user_prompt):
+async def detect_job_listings(user_prompt,client : genai.Client):
     try:
-        client = genai.Client(api_key=os.getenv("API_KEY_GEMINI"))
-        response = client.models.generate_content(
+
+        response = await client.aio.models.generate_content(
             model='gemini-2.0-flash',
             contents=user_prompt,
             config={
@@ -164,7 +196,7 @@ def detect_job_listings(user_prompt):
         )
         raw_response = response.text
         parsed_json = json.loads(raw_response)
-        parsed_json["total_token_count"]=response.usage_metadata.total_token_count
+        parsed_json["total_token_count"] = response.usage_metadata.total_token_count
         return parsed_json
     except Exception as e:
         print(f"[LLM Parsing Error] {e}")
