@@ -2,14 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, KeywordRelevanceScorer, \
-    LXMLWebScrapingStrategy, FilterChain, URLPatternFilter, BM25ContentFilter,URLScorer
-from crawl4ai.deep_crawling import BFSDeepCrawlStrategy,DFSDeepCrawlStrategy ,BestFirstCrawlingStrategy, ContentRelevanceFilter
-from concurrent.futures import ThreadPoolExecutor
-from crawl4ai.deep_crawling.scorers import ContentTypeScorer
-import regex as re
-from collections import Counter
-from crawl_url_bfs import BFSCrawl
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 import asyncio
 from utils.job_listing_llm_preprocess import extract_minified_body_html
 from Heuristic_search import check_job_listing_heuristics
@@ -39,8 +32,8 @@ async def main():
     # Step 2: Insert it into a Markdown Generator
     md_generator = DefaultMarkdownGenerator(content_filter=prune_filter)
     run_cfg = CrawlerRunConfig(
-        wait_until="load",
-        excluded_tags=["style", "script"],
+        wait_until="networkidle",
+        excluded_tags=["style"],
         exclude_external_links=False,
         markdown_generator=md_generator,
         # stream=True,  # Enable streaming for arun_many()
@@ -57,7 +50,7 @@ async def main():
     crawler: AsyncWebCrawler = AsyncWebCrawler(config=browser_cfg)
     await crawler.start()
     """inspect this site"""
-    start_url="https://recruiting.ultipro.com/MEA1004MEVM/JobBoard/d561e1d3-aa5e-4c1b-bcf5-5319c6abdcac/OpportunityDetail?opportunityId=778ce4d3-1690-46cb-8aac-834b03160cfe"
+    start_url="https://jobs.unchealthcare.org/search/jobs"
     encoding = tiktoken.get_encoding("cl100k_base")
     results=await crawler.arun(url=start_url,config=run_cfg)
 
@@ -65,15 +58,10 @@ async def main():
         if results.success:
 
 
-            # print(extract_minified_body_html(results.html))
-            markdown=results.markdown.raw_markdown
-            # print(markdown)
-            # print(results.markdown.fit_markdown)
-            # soup = BeautifulSoup(results.html, 'html.parser')
-            # parsed_html_str = soup.body
-            print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-            token_ids = encoding.encode(markdown)
-            print("total token count", len(token_ids))
+
+            final_score,debug_info=check_job_listing_heuristics(results.html,url=start_url)
+
+            print(final_score, debug_info)
             # --- Count the tokens ---
 
             # print(parsed_html_str)
@@ -87,26 +75,7 @@ async def main():
     common_selectors=[("div","job"),("li","job"),("article","job"),("div","result"),("li","result"),("div","item"),("div","card"), \
                       ("div","Career"),("tr","job"),("article","career")]           # Added table row
     potential_items = {}
-    for selector in common_selectors:
-        try:
-            career_elements = soup.find_all(selector[0], class_=re.compile(r'{}'.format(selector[1]), re.IGNORECASE))
-            # items = soup.select(selector, limit=50)  # Use CSS selectors
-            # print(career_elements)
 
-            potential_items.extend(career_elements)
-
-        except Exception:
-            pass  # Ignore invalid selectors
-    unique_items=[]
-    for item in potential_items:
-        unique_items.append(f"""<{item.name}{' '.join(f'{attr}="{value}"' for attr, value in item.attrs.items())}>...</{item.name}>""")
-    # unique_items = list({item:  for item in potential_items})
-    counts = Counter(unique_items)
-
-    # for ui,val in counts.items():
-        # print("unique_items",ui,val)
-    # final_score,debug_info=check_job_listing_heuristics(results.html,start_url)
-    # print(final_score,"  ",debug_info)
 
     await crawler.close()
 if __name__ =="__main__":

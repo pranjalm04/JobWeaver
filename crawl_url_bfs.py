@@ -1,8 +1,9 @@
 import asyncio
+import uuid
 from typing import Set, List, Optional, Tuple, Dict
 import logging
 from urllib.parse import urlparse
-from crawl4ai import CrawlResult, AsyncWebCrawler, CrawlerRunConfig
+from crawl4ai import CrawlResult, AsyncWebCrawler, CrawlerRunConfig,browser_manager
 from utils.normalize_url import normalize_url,url_diff
 import regex as re
 # from cosine_similarity import calculate_cosine_similarity_score
@@ -24,14 +25,19 @@ class BFSCrawl():
             self,
             start_url: str,
             max_depth: int,
+            crawler,
             include_external: bool = False
     ):
+        self.crawler:AsyncWebCrawler=crawler
         self.start_url = start_url
         self.max_depth = max_depth
         self.include_external = include_external
         self._cancel_event = asyncio.Event()
         self._pages_crawled = 0
-        self.logger = logging.getLogger(__name__)
+        self.results:List[dict[str,any]]=[]
+        self.visited: Set[str] = set()
+
+        self.session_id=f"parallel_session_{self.start_url}"
         self.JOB_KEYWORDS = {
             'career': 1,
             'job': 1,
@@ -97,27 +103,15 @@ class BFSCrawl():
             result: CrawlResult,
             source_url: str,
             current_depth: int,
-            visited: Set[str],
             next_level: List[Tuple[str, Optional[str], int]]
     ) -> [float, list, bool]:
-        """
-        Extracts links from the crawl result, validates and scores them, and
-        prepares the next level of URLs.
-        Each valid URL is appended to next_level as a tuple (url, parent_url)
-        and its depth is tracked.
-        """
+
         score, debug_info = check_job_listing_heuristics(result.html, source_url)
+        print(source_url, score)
         is_job_listing = True if score > 3 else False
         job_listing_metadata=None
-        # if is_job_listing:
-        #     try:
-        #         job_listing_metadata = analyze_full_html_with_llm(result.html, source_url)
-        #         print(source_url, job_listing_metadata)
-        #     except Exception as e:
-        #         print("error while getting response from llm", e)
         next_depth = current_depth + 1
         if next_depth <= self.max_depth:
-            # print(result.html)
             links = result.links.get("internal", [])
 
             if self.include_external:
@@ -127,7 +121,7 @@ class BFSCrawl():
                 url = link.get("href")
                 context = link.get("text")
                 base_url = normalize_url(url, source_url)
-                if base_url in visited:
+                if base_url in self.visited:
                     continue
                 if not self.can_process_url(url,base_url, source_url):
                     continue
@@ -141,11 +135,9 @@ class BFSCrawl():
                 prioritized_url = self.prioritizeUrls(url, ctx)
                 if prioritized_url is not None:
                     next_level.append((prioritized_url, source_url, next_depth))
-        return [score, debug_info, is_job_listing,job_listing_metadata]
+        return (result.html,result.url,score, debug_info, is_job_listing,job_listing_metadata)
 
-    async def _arun_batch(
-            self,
-            crawler: AsyncWebCrawler,
+    async def _arun_batch(self,
             config: CrawlerRunConfig,
             max_concurrent: int
     ) -> [dict[str,any] or None]:
@@ -153,58 +145,61 @@ class BFSCrawl():
         Batch (non-streaming) mode:
         Processes one BFS level at a time, then yields all the results.
         """
-        visited: Set[str] = set()
         current_level: List[Tuple[str, Optional[str], int]] = [(self.start_url, None, 0)]
-        results: List[dict[str,any]] = []
         depth_bfs=0
+        sessions_ids=[]
         remove_duplicates = set()
         while current_level and not self._cancel_event.is_set():
 
             next_level: List[Tuple[str, Optional[str], int]] = []
             urls_depth = [(url, depth) for url, _, depth in current_level]
             urls = [url for url, _ in urls_depth]
-            visited.update(urls)
-            print("level==============", depth_bfs)
-            # Clone the config to disable deep crawling recursion and enforce batch mode.
-            batch_config = config.clone(deep_crawl_strategy=None, stream=False)
+            self.visited.update(urls)
+            print("level==============", depth_bfs,len(current_level),current_level)
+
+            batch_config = config.clone(deep_crawl_strategy=None, stream=False, session_id=self.session_id)
             for i in range(0, len(urls_depth), max_concurrent):
                 batch = urls_depth[i:i + max_concurrent]
                 tasks = []
                 for j, (url, depth) in enumerate(batch):
-                    session_id = (
-                        f"parallel_session_{j}"  # Different session per concurrent task
-                    )
-                    task = crawler.arun(url=url, config=batch_config, session_id=session_id)
+
+                    task = await self.crawler.arun(url=url,config=batch_config)
                     tasks.append(task)
                 print(f"starting {len(tasks)} tasks............")
                 result_batch = await asyncio.gather(*tasks, return_exceptions=True)
                 print("end tasks")
                 discovery_tasks = []
+                print('batch',len(batch))
+                print('result_bach',len(result_batch))
                 for (url, depth), result in zip(batch, result_batch):
+                    print(result)
                     if isinstance(result, Exception):
                         print("Error parsing url {}".format(url))
                     elif result.success:
                         url = result.url
-                        parent_url = next((parent for (u, parent, depth) in current_level if u == url), None)
-                        task = self.link_discovery(result, url, depth, visited, next_level)
-                        discovery_tasks.append((result, task))
-                results_with_discovery = await asyncio.gather(*[t[1] for t in discovery_tasks], return_exceptions=True)
-                for (result, discovery), (score, debug_info, is_job_listing,job_listing_metadata) in zip(discovery_tasks,
-                                                                                    results_with_discovery):
-                    if isinstance((score, debug_info, is_job_listing), Exception):
+                        print('in discovery task creation')
+                        task = await self.link_discovery(result, url, depth, next_level)
+                        discovery_tasks.append(task)
+                    else:
+                        print(result.success)
+                        print("no result")
+
+                results_with_discovery = await asyncio.gather(*[t for t in discovery_tasks], return_exceptions=True)
+                print(f"discovery_tasks{len(discovery_tasks)}")
+                for (html,url, score, debug_info, is_job_listing,job_listing_metadata) in results_with_discovery:
+                    if isinstance((html,url, score, debug_info, is_job_listing,job_listing_metadata), Exception):
                         continue
                     result_metadata={
-                        "html":result.html,
-                        "url": result.url,
+                        "html":html,
+                        "url": url,
                         "depth":depth_bfs,
                         "debug_info": debug_info,
                         "is_job_listing": is_job_listing,
                         "job_listing_score": score,
                         "job_listing_metadata":job_listing_metadata
                     }
-                    result.html=None
-                    result.links=None
-                    results.append(result_metadata)
+                    print(score,url)
+                    self.results.append(result_metadata)
 
             filtered_next_level = []
             for url, source_url, depth in next_level:
@@ -216,8 +211,15 @@ class BFSCrawl():
             print(f"----------------FINISHED CRAWLING URLS AT LEVEL {depth_bfs}--------------------------------")
             depth_bfs+=1
 
-        results=sorted(results,key=lambda x:(-x['job_listing_score'],len(x["url"])))
-        # for i,result in enumerate(results):
-        #     if i<5:
-        #         print(result["url"],result["job_listing_score"],result["debug_info"])
-        return results[0] if results else None
+        results_sorted_by_highest_score=sorted(self.results,key=lambda x:(-x['job_listing_score'],len(x["url"])))
+        print([(r['url'],r['job_listing_score']) for r in results_sorted_by_highest_score])
+        del self.results
+        # self.clean_up_sessions()
+        job_listing_info=results_sorted_by_highest_score[0] if results_sorted_by_highest_score else None
+        del results_sorted_by_highest_score
+        if job_listing_info and job_listing_info['is_job_listing']:
+            return job_listing_info
+        else:
+            return None
+
+
