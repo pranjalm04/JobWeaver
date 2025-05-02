@@ -6,7 +6,7 @@ import random
 import aiofiles
 from dotenv import load_dotenv
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
-from crawler_custom import BFSCrawl
+from crawler_bfs import BFSCrawl
 from google import genai
 import os
 import json
@@ -49,7 +49,7 @@ class crawlJobs():
             log_console=False
         )
         self.client = genai.Client(api_key=os.getenv("API_KEY_GEMINI"))
-        self.SEED_URLS=['https://jobs.unchealthcare.org/search/jobs']
+        self.SEED_URLS=['https://jobs.careers.microsoft.com/global/en/search?l=en_us&pg=1&pgSz=20&o=Relevance&flt=true&ref=cms']
         # self.SEED_URLS=random.sample(pd.read_csv("extras/Error Report_Untitled Page_Table.csv")['host'].tolist(),20)
         print(self.SEED_URLS)
 
@@ -99,7 +99,7 @@ class crawlJobs():
             await extract_job_data(self.crawler,[j['URL'] for j in jobs],self.RUN_CFG,self.client)
 
             if llm_res:
-                async with aiofiles.open('llm_outputs.json', mode="a", encoding="utf-8") as f:
+                async with aiofiles.open('IntermediateArtifacts/llm_outputs.json', mode="a", encoding="utf-8") as f:
                     await f.write(json.dumps(llm_res, ensure_ascii=False) + "\n")
         except Exception as e:
             print(f"[LLM SAVE ERROR] {url}: {e}")
@@ -107,7 +107,7 @@ class crawlJobs():
     async def save_record(self, record: str):
         """Save basic crawl record asynchronously."""
         try:
-            async with aiofiles.open('career_listings.txt', mode="a", encoding="utf-8") as f:
+            async with aiofiles.open('IntermediateArtifacts/career_listings.txt', mode="a", encoding="utf-8") as f:
                 await f.write(record + "\n")
         except Exception as e:
             print(f"[RECORD SAVE ERROR]: {e}")

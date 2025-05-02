@@ -5,16 +5,8 @@ from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 import logging
 import hashlib # Import hashlib for content hashing
-
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# ------- Config Section --------
-# Using the joblisting dictionary provided by the user
-# NOTE: This config is based on an initial LLM extraction.
-# The scraper will dynamically find jobs on subsequent pages.
-
-
 # ------- Scraper Section --------
 async def scrape_jobs_to_dict(joblisting):
 
@@ -50,12 +42,12 @@ async def scrape_jobs_to_dict(joblisting):
                 break
             previous_height = new_height
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=cfg['headless'])
+        browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
 
         try:
             await page.goto(base_url, wait_until='networkidle', timeout=60000) # Increased timeout
-
+            # await asyncio.sleep(1)
             # Wait for the main job container to be visible
             try:
                 await scroll_to_bottom_until_stable(page)
@@ -88,10 +80,11 @@ async def scrape_jobs_to_dict(joblisting):
         async def get_job_urls_on_page():
             """Scrapes job URLs from the current page."""
             try:
+                 await page.wait_for_load_state('networkidle', timeout=10000)
                  # Wait for job links to be present inside the container
                  await page.wait_for_selector(f"{container_selector} {job_link_selector}", state='attached', timeout=10000)
                  # Wait for network activity to settle after dynamic loading
-                 await page.wait_for_load_state('domcontentloaded', timeout=10000)
+
             except Exception as e:
                  logging.warning(f"[Page {page_count}] Could not find job links or network idle before scraping: {e}. Attempting to scrape anyway.")
 
@@ -142,8 +135,6 @@ async def scrape_jobs_to_dict(joblisting):
 
                 # --- Attempt to Click Next ---
                 next_btn_locator = page.locator(next_button_selector).first
-
-                # Check if the next button is visible before attempting to click
                 is_next_btn_visible = False
                 try:
                      is_next_btn_visible = await next_btn_locator.is_visible(timeout=5000)
@@ -171,7 +162,7 @@ async def scrape_jobs_to_dict(joblisting):
                     # Wait for the page to load after the click.
                     await page.wait_for_load_state('domcontentloaded', timeout=30000)
                     # Add a small fixed delay as a fallback
-                    await page.wait_for_timeout(1000)
+                    await page.wait_for_timeout(500)
 
                     logging.info(f"Clicked Next Button. Moving to Page {page_count + 1}.")
                     page_count += 1

@@ -164,7 +164,7 @@ class BFSCrawl():
         depth_bfs=0
         remove_duplicates = set()
         seed_url_hash=str(hashlib.md5(self.start_url.encode('utf-8')).hexdigest())
-        session_id = seed_url_hash
+
         while current_level and not self._cancel_event.is_set():
 
             next_level: List[Tuple[str, Optional[str], int]] = []
@@ -174,7 +174,7 @@ class BFSCrawl():
             print("level==============", depth_bfs,current_level)
 
             # Clone the config to disable deep crawling recursion and enforce batch mode.
-
+            session_id = self.session_id + seed_url_hash + str(depth_bfs)
             batch_config = config.clone(deep_crawl_strategy=None, stream=False,session_ids=session_id)
             for i in range(0, len(urls_depth), max_concurrent):
                 batch = urls_depth[i:i + max_concurrent]
