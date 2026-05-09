@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from physicianx.llm.validators.exceptions import OutputValidationError
-from physicianx.llm.validators.job_details_output_validator import JobDetailsOutputValidator
+from jobweaver.llm.validators.exceptions import OutputValidationError
+from jobweaver.llm.validators.job_details_output_validator import JobDetailsOutputValidator
 
 
 class TestJobDetailsOutputValidator(unittest.TestCase):

@@ -5,10 +5,10 @@ import sys
 import types
 import unittest
 
-from physicianx.config.pipeline import PipelineConfig
-from physicianx.llm.lm import parse_extra_headers_json
-from physicianx.llm.models import JobListingLM
-from physicianx.llm.session import LMSession
+from jobweaver.config.pipeline import PipelineConfig
+from jobweaver.llm.lm import parse_extra_headers_json
+from jobweaver.llm.models import JobListingLM
+from jobweaver.llm.session import LMSession
 
 
 class _Resp:

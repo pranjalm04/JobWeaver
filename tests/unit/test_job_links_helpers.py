@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-from physicianx.models import JobLink, JobListingSchema, ScrapedJobLink
-from physicianx.pipeline.stages.job_links import (
+from jobweaver.models import JobLink, JobListingSchema, ScrapedJobLink
+from jobweaver.pipeline.stages.job_links import (
     _append_job_if_new,
     _apply_llm_link_fallback,
     try_extract_jobs_from_static_html,

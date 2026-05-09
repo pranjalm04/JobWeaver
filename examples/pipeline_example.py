@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
-from physicianx.pipeline.runner import run_pipeline_from_env
+from jobweaver.pipeline.runner import run_pipeline_from_env
 
 
 if __name__ == "__main__":

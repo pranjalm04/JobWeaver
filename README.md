@@ -1,4 +1,4 @@
-# physicianx
+# jobweaver
 
 Worker-first job discovery + extraction pipeline.
 
@@ -32,13 +32,13 @@ cp .env.example .env
 3) Start a broker (Redis) and worker:
 
 ```bash
-poetry run celery -A physicianx.worker.celery_app worker -l info
+poetry run celery -A jobweaver.worker.celery_app worker -l info
 ```
 
 4) Enqueue a seed:
 
 ```bash
-poetry run physicianx enqueue-seed --seed-url "https://example.com/careers"
+poetry run jobweaver enqueue-seed --seed-url "https://example.com/careers"
 ```
 
 ## Run in-process (no Redis)

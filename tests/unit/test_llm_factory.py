@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from physicianx.config.pipeline import PipelineConfig
-from physicianx.models import JobListingSchema
-from physicianx.llm.lm import ensure_pipeline_llm_config
-from physicianx.llm.models import JobListingLM
-from physicianx.llm.validators import JobListingOutputValidator
+from jobweaver.config.pipeline import PipelineConfig
+from jobweaver.models import JobListingSchema
+from jobweaver.llm.lm import ensure_pipeline_llm_config
+from jobweaver.llm.models import JobListingLM
+from jobweaver.llm.validators import JobListingOutputValidator
 
 
 class TestPipelineConfigLlm(unittest.TestCase):

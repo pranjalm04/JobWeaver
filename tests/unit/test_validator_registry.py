@@ -4,9 +4,9 @@ import unittest
 
 from pydantic import BaseModel
 
-import physicianx.llm.models  # noqa: F401 -- registers default schema validators
-from physicianx.models import JobDetails, JobListingSchema
-from physicianx.llm.validators import (
+import jobweaver.llm.models  # noqa: F401 -- registers default schema validators
+from jobweaver.models import JobDetails, JobListingSchema
+from jobweaver.llm.validators import (
     JobDetailsOutputValidator,
     JobListingOutputValidator,
     PydanticValidator,

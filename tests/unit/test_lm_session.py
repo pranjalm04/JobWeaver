@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from physicianx.llm.session import LMSession
+from jobweaver.llm.session import LMSession
 
 
 class TestLMSession(unittest.TestCase):
