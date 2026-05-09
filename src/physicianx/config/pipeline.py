@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Self
 
-from pydantic import AliasChoices, Field, computed_field, field_validator
+from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,7 +56,25 @@ class PipelineConfig(BaseSettings):
         description="Concurrent fetch budget per hostname inside BFS batches.",
         validation_alias=AliasChoices("MAX_PAGES_PER_HOST"),
     )
+    max_urls_per_level: int = Field(
+        default=10000,
+        ge=1,
+        description="Cap on URLs queued at a single BFS level (per seed).",
+        validation_alias=AliasChoices("MAX_URLS_ON_LEVEL", "MAX_URLS_PER_LEVEL"),
+    )
+    max_detail_urls: int = Field(
+        default=10,
+        ge=1,
+        le=10_000,
+        description="Cap on individual job-detail pages fetched per listing.",
+        validation_alias=AliasChoices("MAX_DETAIL_URLS"),
+    )
     output_dir: str = Field(default="outputs")
+    job_details_path: str = Field(
+        default="",
+        validation_alias=AliasChoices("JOB_DETAILS_PATH"),
+        description="JSONL path for accumulated job details. Defaults to <output_dir>/job_details.jsonl.",
+    )
 
     listing_max_chunks: int = Field(
         default=8,
@@ -95,6 +113,12 @@ class PipelineConfig(BaseSettings):
         if not self.seed_urls.strip():
             return []
         return [s.strip() for s in self.seed_urls.split(",") if s.strip()]
+
+    @model_validator(mode="after")
+    def _default_job_details_path(self) -> Self:
+        if not self.job_details_path.strip():
+            self.job_details_path = f"{self.output_dir.rstrip('/')}/job_details.jsonl"
+        return self
 
     @classmethod
     def from_env(cls) -> Self:

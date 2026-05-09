@@ -149,13 +149,13 @@ async def analyze_full_html_with_llm(
     url: str,
     listing_lm: JobListingLM,
     *,
-    config: PipelineConfig | None = None,
+    config: PipelineConfig,
     run_id: str | None = None,
 ) -> JobListingSchema:
-    max_chunks = getattr(config, "listing_max_chunks", 8) if config else 8
-    sleep_ms = getattr(config, "listing_chunk_sleep_ms", 200) if config else 200
-    max_total_tokens = getattr(config, "listing_max_total_tokens", 500_000) if config else 500_000
-    cache_dir = getattr(config, "listing_cache_dir", "") if config else ""
+    max_chunks = config.listing_max_chunks
+    sleep_ms = config.listing_chunk_sleep_ms
+    max_total_tokens = config.listing_max_total_tokens
+    cache_dir = config.listing_cache_dir
 
     cached = try_load_listing_cache(cache_dir, html)
     if cached is not None:

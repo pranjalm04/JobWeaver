@@ -105,8 +105,9 @@ def analyze_listing(self, html: str, url: str) -> dict[str, Any]:
 @celery_app.task(name="physicianx.scrape_job_links")
 def scrape_job_links(listing_payload: dict[str, Any]) -> dict[str, Any]:
     try:
+        cfg = PipelineConfig.from_env()
         listing_spec = JobListingSchema.model_validate(listing_payload)
-        links = asyncio.run(scrape_jobs_to_dict(listing_spec))
+        links = asyncio.run(scrape_jobs_to_dict(listing_spec, config=cfg))
         return {
             "status": "ok",
             "count": len(links),
@@ -130,6 +131,7 @@ def extract_job_details(job_urls: list[str]) -> dict[str, Any]:
                 job_urls,
                 runner.RUN_CFG,
                 runner.job_details_lm,
+                pipeline_config=runner.config,
                 run_id=rid,
             )
             return len(details)

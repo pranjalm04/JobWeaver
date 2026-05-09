@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 
 from crawl4ai import (
@@ -12,6 +11,7 @@ from crawl4ai import (
     PruningContentFilter,
 )
 
+from physicianx.config.pipeline import PipelineConfig
 from physicianx.models import JobDetails
 from physicianx.llm.models import JobDetailsLM
 from physicianx.observability import log_stage_event
@@ -38,13 +38,14 @@ async def detect_job_schema(markdown: str, job_details_lm: JobDetailsLM) -> JobD
 async def extract_job_data(
     crawler: AsyncWebCrawler,
     urls: list[str],
-    config,
+    crawler_run_config,
     job_details_lm: JobDetailsLM,
     *,
+    pipeline_config: PipelineConfig,
     run_id: str | None = None,
 ) -> list[JobDetails]:
     t0 = time.perf_counter()
-    urls = urls[:10]
+    urls = urls[: pipeline_config.max_detail_urls]
     all_job_details: list[JobDetails] = []
     for i in range(0, len(urls), 20):
         batch = urls[i : i + 20]
@@ -55,7 +56,9 @@ async def extract_job_data(
             max_session_permit=10,
             monitor=None,
         )
-        batch_config = config.clone(deep_crawl_strategy=None, stream=False, markdown_generator=md_generator)
+        batch_config = crawler_run_config.clone(
+            deep_crawl_strategy=None, stream=False, markdown_generator=md_generator
+        )
         result_batch = await crawler.arun_many(
             urls=batch,
             config=batch_config,
@@ -64,7 +67,7 @@ async def extract_job_data(
         job_details_tasks = []
         for result in result_batch:
             if isinstance(result, Exception):
-                logging.info("Error parsing url {}")
+                logging.info("Error parsing url: %s", result)
             elif result.success:
                 task = asyncio.create_task(
                     detect_job_schema(
@@ -75,7 +78,7 @@ async def extract_job_data(
                 job_details_tasks.append(task)
 
         job_detail_result = await asyncio.gather(*job_details_tasks, return_exceptions=True)
-        await save_jobs(job_detail_result)
+        await save_jobs(job_detail_result, pipeline_config.job_details_path)
 
         for jd in job_detail_result:
             if isinstance(jd, JobDetails):
@@ -96,8 +99,7 @@ async def extract_job_data(
     return all_job_details
 
 
-async def save_jobs(job_detail_result: list) -> None:
-    job_details_path = os.getenv("JOB_DETAILS_PATH", "job_details.json")
+async def save_jobs(job_detail_result: list, job_details_path: str) -> None:
     records = []
     for jd in job_detail_result:
         if isinstance(jd, JobDetails):
@@ -105,7 +107,7 @@ async def save_jobs(job_detail_result: list) -> None:
         elif jd is None:
             continue
         elif isinstance(jd, Exception):
-            logging.info("result unavilable")
+            logging.info("result unavailable: %s", jd)
 
     if records:
         async with _JOB_DETAILS_WRITE_LOCK:

@@ -80,6 +80,7 @@ class PipelineRunner:
                 )
                 jobs = await scrape_jobs_to_dict(
                     llm_res,
+                    config=self.config,
                     source_html=html,
                     run_id=self.run_id,
                 )
@@ -89,6 +90,7 @@ class PipelineRunner:
                     [j.url for j in jobs],
                     self.RUN_CFG,
                     self.job_details_lm,
+                    pipeline_config=self.config,
                     run_id=self.run_id,
                 )
 
@@ -107,6 +109,7 @@ class PipelineRunner:
                     self.crawler,
                     include_external=True,
                     max_pages_per_host=self.config.max_pages_per_host,
+                    max_urls_per_level=self.config.max_urls_per_level,
                 )
                 rec = await bfs._arun_batch(self.RUN_CFG, self.config.max_pages_per_seed)
         record_line = f"{seed} {rec['url']} {rec['job_listing_score']}" if rec else f"{seed} NA NA"
