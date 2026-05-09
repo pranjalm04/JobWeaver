@@ -82,7 +82,7 @@ class BFSCrawl:
             return False
         return True
 
-    async def link_discovery(
+    def link_discovery(
         self,
         result: CrawlResult,
         source_url: str,
@@ -142,7 +142,7 @@ class BFSCrawl:
         visited: Set[str],
         next_level: List[Tuple[str, Optional[str], int]],
     ) -> list[dict[str, Any]]:
-        discovery_tasks: list[tuple[Any, asyncio.Task]] = []
+        scored: list[dict[str, Any]] = []
         for (url, depth), result in zip(batch, fetched):
             if isinstance(result, Exception):
                 self.logger.warning("Error parsing url %s: %s", url, result)
@@ -150,20 +150,13 @@ class BFSCrawl:
             if not result.success:
                 continue
             self.logger.debug("crawled %s", result.url)
-            task = asyncio.create_task(
-                self.link_discovery(result, result.url, depth, visited, next_level)
-            )
-            discovery_tasks.append((result, task))
-
-        unpacked_results = await asyncio.gather(
-            *[t for _, t in discovery_tasks], return_exceptions=True
-        )
-
-        scored: list[dict[str, Any]] = []
-        for (result, _), unpacked in zip(discovery_tasks, unpacked_results):
-            if isinstance(unpacked, Exception):
+            try:
+                score, debug_info, is_job_listing, job_listing_metadata = self.link_discovery(
+                    result, result.url, depth, visited, next_level
+                )
+            except Exception as exc:
+                self.logger.warning("link_discovery failed for %s: %s", result.url, exc)
                 continue
-            score, debug_info, is_job_listing, job_listing_metadata = unpacked
             scored.append(
                 {
                     "html": result.html,
