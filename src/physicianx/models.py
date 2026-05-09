@@ -1,4 +1,4 @@
-"""Job listing / detail Pydantic models and backward-compatible aliases."""
+"""Job listing / detail Pydantic models."""
 
 from __future__ import annotations
 
@@ -57,9 +57,6 @@ class JobListingSchema(BaseModel):
     )
 
 
-JobListingSpec = JobListingSchema
-
-
 class ScrapedJobLink(BaseModel):
     title: str = Field(default="", description="Best-effort job title")
     url: str = Field(..., description="Resolved job detail page URL")
@@ -78,14 +75,10 @@ class JobDetails(BaseModel):
     )
 
 
-JobDetailsSchema = JobDetails
-
 __all__ = [
     "JobDetails",
-    "JobDetailsSchema",
     "JobLink",
     "JobListingSchema",
-    "JobListingSpec",
     "NextPageElement",
     "ScrapedJobLink",
 ]
