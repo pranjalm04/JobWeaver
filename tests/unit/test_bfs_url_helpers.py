@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
-from physicianx.pipeline.stages.crawl import BFSCrawl, JOB_PATTERNS
+from jobweaver.pipeline.stages.crawl import BFSCrawl, JOB_PATTERNS
 
 
 def _make_bfs() -> BFSCrawl:

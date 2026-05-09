@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from physicianx.models import JobDetails, JobListingSchema
-from physicianx.pipeline.stages.job_details_llm import detect_job_schema
-from physicianx.pipeline.stages.listing_llm import detect_job_listings
+from jobweaver.models import JobDetails, JobListingSchema
+from jobweaver.pipeline.stages.job_details_llm import detect_job_schema
+from jobweaver.pipeline.stages.listing_llm import detect_job_listings
 
 
 class FakeJobListingLM:

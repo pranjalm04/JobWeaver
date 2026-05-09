@@ -1,11 +1,11 @@
 import unittest
 
-from physicianx.url import normalize_url, url_diff
+from jobweaver.url import normalize_url, url_diff
 
 try:
-    from physicianx.models import JobListingSchema
-    from physicianx.pipeline.stages.heuristics import HeuristicResult, check_job_listing_heuristics
-    from physicianx.pipeline.stages.listing_llm import merge_llm_chunk_responses
+    from jobweaver.models import JobListingSchema
+    from jobweaver.pipeline.stages.heuristics import HeuristicResult, check_job_listing_heuristics
+    from jobweaver.pipeline.stages.listing_llm import merge_llm_chunk_responses
 
     _HAS_BS4 = True
 except ModuleNotFoundError:

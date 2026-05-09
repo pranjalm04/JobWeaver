@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "physicianx"
+name = "jobweaver"
 version = "0.1.0"
 description = "job discovery/extraction pipeline (worker-first)."
-authors = ["physicianx <dev@local>"]
+authors = ["jobweaver <dev@local>"]
 readme = "README.md"
-packages = [{ include = "physicianx", from = "src" }]
+packages = [{ include = "jobweaver", from = "src" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
@@ -30,7 +30,7 @@ ruff = "^0.9.0"
 pytest = "^8.3.0"
 
 [tool.poetry.scripts]
-physicianx = "physicianx.cli.main:main"
+jobweaver = "jobweaver.cli.main:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

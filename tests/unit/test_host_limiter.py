@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from physicianx.web.host_limiter import HostLimiter
+from jobweaver.web.host_limiter import HostLimiter
 
 
 class TestHostLimiter(unittest.TestCase):

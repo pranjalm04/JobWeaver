@@ -6,7 +6,7 @@ import unittest
 
 from bs4 import BeautifulSoup
 
-from physicianx.pipeline.stages.heuristics import (
+from jobweaver.pipeline.stages.heuristics import (
     _Scorer,
     _score_job_link_fragments,
     _score_pagination,

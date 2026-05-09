@@ -1,6 +1,6 @@
 import unittest
 
-from physicianx.url import normalize_url, url_diff
+from jobweaver.url import normalize_url, url_diff
 
 
 class TestDomainUrl(unittest.TestCase):
