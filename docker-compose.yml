@@ -1,0 +1,96 @@
+x-worker-base: &worker-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: jobweaver:latest
+  env_file: .env
+  environment:
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+    OUTPUT_DIR: /app/outputs
+    JOB_DETAILS_PATH: /app/outputs/job_details.jsonl
+    LISTING_CACHE_DIR: /app/listing_cache
+  volumes:
+    - ./outputs:/app/outputs
+    - ./listing_cache:/app/listing_cache
+  depends_on:
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: jobweaver-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  worker-crawl:
+    <<: *worker-base
+    container_name: jobweaver-worker-crawl
+    command:
+      - celery
+      - -A
+      - jobweaver.worker.celery_app
+      - worker
+      - --loglevel=info
+      - -Q
+      - crawl
+      - -n
+      - worker-crawl@%h
+      - -c
+      - "2"
+
+  worker-llm:
+    <<: *worker-base
+    container_name: jobweaver-worker-llm
+    command:
+      - celery
+      - -A
+      - jobweaver.worker.celery_app
+      - worker
+      - --loglevel=info
+      - -Q
+      - llm
+      - -n
+      - worker-llm@%h
+      - -c
+      - "4"
+
+  worker-playwright:
+    <<: *worker-base
+    container_name: jobweaver-worker-playwright
+    command:
+      - celery
+      - -A
+      - jobweaver.worker.celery_app
+      - worker
+      - --loglevel=info
+      - -Q
+      - playwright
+      - -n
+      - worker-playwright@%h
+      - -c
+      - "2"
+
+  # One-shot: `docker compose run --rm runner` enqueues run-pipeline.
+  # Workers handle the rest. Use `docker compose run --rm runner enqueue-seed --seed-url ...`
+  # to enqueue a single seed instead.
+  runner:
+    <<: *worker-base
+    container_name: jobweaver-runner
+    profiles: ["run"]
+    restart: "no"
+    entrypoint: ["jobweaver"]
+    command: ["run-pipeline"]
+
+volumes:
+  redis-data:

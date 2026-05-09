@@ -22,3 +22,7 @@ def main() -> None:
         result = run_pipeline.delay()
         print(f"Enqueued run_pipeline task_id={result.id}")
 
+
+if __name__ == "__main__":
+    main()
+
